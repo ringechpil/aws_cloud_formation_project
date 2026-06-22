@@ -190,6 +190,94 @@ Resources:
       RouteTableId: !Ref PrivateRouteTable
       SubnetId: !Ref PrivateSubnet2
 
+##########
+#Security Groups
+##########
+
+  BastionHostSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: BastionSG
+      GroupDescription: Enable access to Bastion Host
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: BastionHostSG
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: LoadBalancerSG
+      GroupDescription: Allow HTTP/HTTPS from the internet, allow traffic out to ASG
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: LoadBalancerSG
+
+  LBEgressToAsg:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref LoadBalancerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      DestinationSecurityGroupId: !Ref AsgSecurityGroup
+
+  AsgSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: AsgSG
+      GroupDescription: Allow SSH from Bastion, and app traffic
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref BastionHostSecurityGroup
+      Tags:
+        - Key: Name
+          Value: AsgSG
+
+  AsgIngressFromLB:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref AsgSecurityGroup
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+
+
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: DbSG
+      GroupDescription: Allow DB access from Bastion and ASG
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref BastionHostSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref AsgSecurityGroup
+      Tags:
+        - Key: Name
+          Value: DbSG
+
+
 ###########
 # Outputs
 ###########
@@ -243,3 +331,27 @@ Outputs:
     Value: !Ref PrivateRouteTable
     Export:
       Name: !Sub '${AWS::StackName}-PrivateRouteTableId'
+
+  BastionHostSecurityGroupId:
+    Description: The ID of the Bastion Host Security Group
+    Value: !Ref BastionHostSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-BastionHostSecurityGroupId'
+
+  AsgSecurityGroupId:
+    Description: The ID of the ASG Security Group
+    Value: !Ref AsgSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-AsgSecurityGroupId'
+
+  DbSecurityGroupId:
+    Description: The ID of the DB Security Group
+    Value: !Ref DbSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-DbSecurityGroupId'
+
+  LoadBalancerSecurityGroupId:
+    Description: The ID of the Load Balancer Security Group
+    Value: !Ref LoadBalancerSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LoadBalancerSecurityGroupId'

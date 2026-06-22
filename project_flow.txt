@@ -1,0 +1,10 @@
+We use CloudFormation to create and deploy an infrastructure in the cloud.
+
+
+1. We first deploy a VPC containing:
+
+ - 2 Public Subnets
+ - 2 Private Subnets
+ - Internet Gateway
+ - Appropriate Route Tables
+ - Route Table Associations 

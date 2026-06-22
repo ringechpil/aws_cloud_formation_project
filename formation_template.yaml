@@ -108,6 +108,20 @@ Resources:
         - Key: Name
           Value: Public Subnet 2
 
+
+###########
+# Private Route Table
+###########
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Private Route Table
+
+
 ###########
 # Private Subnet 1
 ###########
@@ -159,25 +173,22 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnet2
 
+
 ###########
-# App Security Group
+# Private Route Table Associations
 ###########
 
-  # AppSecurityGroup:
-  #   Type: AWS::EC2::SecurityGroup
-  #   DependsOn: LabVPC
-  #   Properties:
-  #     GroupName: SG
-  #     GroupDescription: Enable access to VPC
-  #     VpcId: !Ref LabVPC
-  #     SecurityGroupIngress:
-  #       - IpProtocol: tcp
-  #         FromPort: 22
-  #         ToPort: 22
-  #         CidrIp: 0.0.0.0/0
-  #     Tags:
-  #       - Key: Name
-  #         Value: SG
+  PrivateRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet2
 
 ###########
 # Outputs
@@ -226,3 +237,9 @@ Outputs:
     Value: !Ref PublicRouteTable
     Export:
       Name: !Sub '${AWS::StackName}-PublicRouteTableId'
+
+  PrivateRouteTableId:
+    Description: The ID of the Private Route Table
+    Value: !Ref PrivateRouteTable
+    Export:
+      Name: !Sub '${AWS::StackName}-PrivateRouteTableId'

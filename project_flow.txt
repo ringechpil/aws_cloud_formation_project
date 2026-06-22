@@ -8,3 +8,5 @@ We use CloudFormation to create and deploy an infrastructure in the cloud.
  - Internet Gateway
  - Appropriate Route Tables
  - Route Table Associations 
+
+2. We deploy and configure Security Groups with appropriate inbound/outbound rules.

@@ -10,3 +10,6 @@ We use CloudFormation to create and deploy an infrastructure in the cloud.
  - Route Table Associations 
 
 2. We deploy and configure Security Groups with appropriate inbound/outbound rules.
+
+3. We deploy a Web Server EC2 instance in the Public Subnet, with the appropriate Security Group that allows only SSH connection via personal local machine.
+We then connect to this instace. 

@@ -23,6 +23,17 @@ Parameters:
   PrivateSubnet2Cidr:
     Type: String
     Default: 10.0.4.0/24
+  
+  MyIpAddress:
+    Type: String
+
+  AmazonLinuxAMIID:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+  
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: vockey
 
 
 Resources:
@@ -190,24 +201,42 @@ Resources:
       RouteTableId: !Ref PrivateRouteTable
       SubnetId: !Ref PrivateSubnet2
 
+
+##########
+# EC2 Instance
+##########
+
+  WebServerInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmazonLinuxAMIID
+      InstanceType: t3.micro
+      KeyName: !Ref KeyPairName
+      SecurityGroupIds: 
+        - !Ref WebServerSecurityGroup
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: Web Server
+
 ##########
 #Security Groups
 ##########
 
-  BastionHostSecurityGroup:
+  WebServerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: BastionSG
-      GroupDescription: Enable access to Bastion Host
+      GroupName: WebServerSG
+      GroupDescription: Enable access to Web Server
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Sub '${MyIpAddress}/32'
       Tags:
         - Key: Name
-          Value: BastionHostSG
+          Value: WebServerSG
 
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -224,59 +253,58 @@ Resources:
         - Key: Name
           Value: LoadBalancerSG
 
-  LBEgressToAsg:
+  LoadBalancerEgressToASG:
     Type: AWS::EC2::SecurityGroupEgress
     Properties:
       GroupId: !Ref LoadBalancerSecurityGroup
       IpProtocol: tcp
       FromPort: 80
       ToPort: 80
-      DestinationSecurityGroupId: !Ref AsgSecurityGroup
+      DestinationSecurityGroupId: !Ref ASGSecurityGroup
 
-  AsgSecurityGroup:
+  ASGSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupName: AsgSG
-      GroupDescription: Allow SSH from Bastion, and app traffic
+      GroupDescription: Allow SSH from Web Server, and app traffic
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          SourceSecurityGroupId: !Ref BastionHostSecurityGroup
+          SourceSecurityGroupId: !Ref WebServerSecurityGroup
       Tags:
         - Key: Name
           Value: AsgSG
 
-  AsgIngressFromLB:
+  ASGIngressFromLoadBalancer:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !Ref AsgSecurityGroup
+      GroupId: !Ref ASGSecurityGroup
       IpProtocol: tcp
       FromPort: 80
       ToPort: 80
       SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
 
 
-  DbSecurityGroup:
+  DatabaseSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupName: DbSG
-      GroupDescription: Allow DB access from Bastion and ASG
+      GroupDescription: Allow DB access from Web Server and ASG
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          SourceSecurityGroupId: !Ref BastionHostSecurityGroup
+          SourceSecurityGroupId: !Ref WebServerSecurityGroup
         - IpProtocol: tcp
           FromPort: 3306
           ToPort: 3306
-          SourceSecurityGroupId: !Ref AsgSecurityGroup
+          SourceSecurityGroupId: !Ref ASGSecurityGroup
       Tags:
         - Key: Name
           Value: DbSG
-
 
 ###########
 # Outputs
@@ -332,26 +360,38 @@ Outputs:
     Export:
       Name: !Sub '${AWS::StackName}-PrivateRouteTableId'
 
-  BastionHostSecurityGroupId:
-    Description: The ID of the Bastion Host Security Group
-    Value: !Ref BastionHostSecurityGroup
+  WebServerSecurityGroupId:
+    Description: The ID of the Web Server Security Group
+    Value: !Ref WebServerSecurityGroup
     Export:
-      Name: !Sub '${AWS::StackName}-BastionHostSecurityGroupId'
+      Name: !Sub '${AWS::StackName}-WebServerSecurityGroupId'
 
-  AsgSecurityGroupId:
+  ASGSecurityGroupId:
     Description: The ID of the ASG Security Group
-    Value: !Ref AsgSecurityGroup
+    Value: !Ref ASGSecurityGroup
     Export:
-      Name: !Sub '${AWS::StackName}-AsgSecurityGroupId'
+      Name: !Sub '${AWS::StackName}-ASGSecurityGroupId'
 
-  DbSecurityGroupId:
+  DatabaseSecurityGroupId:
     Description: The ID of the DB Security Group
-    Value: !Ref DbSecurityGroup
+    Value: !Ref DatabaseSecurityGroup
     Export:
-      Name: !Sub '${AWS::StackName}-DbSecurityGroupId'
+      Name: !Sub '${AWS::StackName}-DatabaseSecurityGroupId'
 
   LoadBalancerSecurityGroupId:
     Description: The ID of the Load Balancer Security Group
     Value: !Ref LoadBalancerSecurityGroup
     Export:
       Name: !Sub '${AWS::StackName}-LoadBalancerSecurityGroupId'
+
+  WebServerInstanceId:
+    Description: The Instance ID of the Web Server
+    Value: !Ref WebServerInstance
+    Export:
+      Name: !Sub '${AWS::StackName}-WebServerInstanceId'
+
+  WebServerPublicId:
+    Description: The public IP address of the Web Server
+    Value: !GetAtt WebServerInstance.PublicIp
+    Export:
+      Name: !Sub '${AWS::StackName}-WebServerPublicId'

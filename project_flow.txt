@@ -11,5 +11,20 @@ We use CloudFormation to create and deploy an infrastructure in the cloud.
 
 2. We deploy and configure Security Groups with appropriate inbound/outbound rules.
 
-3. We deploy a Web Server EC2 instance in the Public Subnet, with the appropriate Security Group that allows only SSH connection via personal local machine.
+3. We deploy a Web Server EC2 instance in the Public Subnet, with the appropriate Security Group that allows SSH connection only via personal local machine, but also can be accessed via HTTP.
 We then connect to this instace. 
+
+4. We install required packages on the Web Server instance we deployed. 
+ - Apache Web Server (httpd):
+    sudo yum install -y httpd
+    sudo systemctl start httpd
+    sudo systemctl enable httpd
+
+- PHP:
+    sudo yum install -y php
+    sudo systemctl restart httpd
+
+- MariaDB Client:
+    sudo yum install -y mariadb
+
+

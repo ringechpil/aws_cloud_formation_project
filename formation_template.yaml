@@ -219,6 +219,15 @@ Resources:
         - Key: Name
           Value: Web Server
 
+  WebServerEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref WebServerInstance
+      Tags:
+        - Key: Name
+          Value: WebServerEIP
+
 ##########
 #Security Groups
 ##########
@@ -396,6 +405,6 @@ Outputs:
 
   WebServerPublicId:
     Description: The public IP address of the Web Server
-    Value: !GetAtt WebServerInstance.PublicIp
+    Value: !Ref WebServerEIP
     Export:
       Name: !Sub '${AWS::StackName}-WebServerPublicId'

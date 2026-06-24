@@ -135,3 +135,7 @@ rm -rf ~/wordpress/
 5. After this is complete, we conncect to the Web Server instance via HTTP using our Web Browser (`http:\\<instanceIP>`).
 There we register to WordPress, and make a Webpage or small Website. 
 
+6. We automate this process further up by adding the `User Data` section in the EC2 Instance part of the template `.yaml` file,
+so that the LAMP stack is installed and configured automatically, upon the creation of the stack. 
+
+To check if the WordPress is running on the instance, we visit `http://<instanceIP>/health.html` via Web Browser. 

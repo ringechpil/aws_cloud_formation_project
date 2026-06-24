@@ -218,6 +218,71 @@ Resources:
       Tags:
         - Key: Name
           Value: Web Server
+      UserData:
+         Fn::Base64: |
+          #!/bin/bash
+          # Update OS
+          dnf update -y
+
+          # Install Packages
+          dnf install -y \
+          httpd \
+          php \
+          php-mysqlnd \
+          php-fpm \
+          mariadb105-server \
+          wget \
+          tar
+
+          # Enable Services
+          systemctl enable httpd
+          systemctl start httpd
+
+          systemctl enable mariadb
+          systemctl start mariadb
+
+          # Create Database and User
+          mysql -u root <<EOF
+          CREATE DATABASE wordpress;
+          CREATE USER 'wpuser'@'localhost' IDENTIFIED BY 'Password123!';
+          GRANT ALL PRIVILEGES ON wordpress.* TO 'wpuser'@'localhost';
+          FLUSH PRIVILEGES;
+          EOF
+
+          # Download WordPress
+          cd /tmp
+
+          wget https://wordpress.org/latest.tar.gz
+
+          tar -xzf latest.tar.gz
+
+          # Remove Apache Default Page
+          rm -rf /var/www/html/*
+
+          # Copy WordPress Files
+          cp -r wordpress/* /var/www/html/
+
+          # Configure WordPress
+          cd /var/www/html
+
+          cp wp-config-sample.php wp-config.php
+
+          sed -i "s/database_name_here/wordpress/" wp-config.php
+          sed -i "s/username_here/wpuser/" wp-config.php
+          sed -i "s/password_here/Password123!/" wp-config.php
+          sed -i "s/localhost/localhost/" wp-config.php
+
+          # Permissions
+          chown -R apache:apache /var/www/html
+
+          find /var/www/html -type d -exec chmod 755 {} \;
+          find /var/www/html -type f -exec chmod 644 {} \;
+
+          # Restart Apache
+          systemctl restart httpd
+
+          # Create Validation Page
+          echo "<h1>WordPress Installation Completed Successfully</h1>" > /var/www/html/health.html
 
 ##########
 #Security Groups

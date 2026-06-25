@@ -159,6 +159,33 @@ Resources:
 
 
 ###########
+# Auto Scaling Group
+###########
+
+  WordPressASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: WordPressASG
+      MinSize: '2'
+      DesiredCapacity: '2'
+      MaxSize: '4'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WordPressLaunchTemplate
+        Version: !GetAtt WordPressLaunchTemplate.LatestVersionNumber
+      VPCZoneIdentifier:
+        - Fn::ImportValue: !Sub '${NetworkStackName}-PublicSubnet1Id'
+        - Fn::ImportValue: !Sub '${NetworkStackName}-PublicSubnet2Id'
+      TargetGroupARNs:
+        - !Ref ALBTargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: WordPress-ASG-Instance
+          PropagateAtLaunch: true
+
+
+###########
 # Outputs
 ###########
 
@@ -193,3 +220,9 @@ Outputs:
     Value: !Ref WordPressLaunchTemplate
     Export:
       Name: !Sub '${AWS::StackName}-LaunchTemplateId'
+
+  ASGName:
+    Description: Name of the Auto Scaling Group
+    Value: !Ref WordPressASG
+    Export:
+      Name: !Sub '${AWS::StackName}-ASGName'

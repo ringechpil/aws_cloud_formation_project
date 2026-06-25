@@ -14,7 +14,8 @@ A hands-on project that provisions a WordPress site on AWS using CloudFormation 
 - **Application Load Balancer** (internet-facing) across both public subnets, along with:
   - *Target Group* with health checks against `/health.html`
   - *HTTP Listener* on port 80
-  - *Launch Template* — reusable EC2 blueprint with full WordPress UserData bootstrap
+- **Launch Template** — reusable EC2 blueprint with full WordPress UserData bootstrap
+- **Auto Scaling Group** — min 2, desired 2, max 4 instances across both public subnets
 
 The infrastructure is split across three templates:
 
@@ -22,7 +23,7 @@ The infrastructure is split across three templates:
 |----------|---------------|
 | `templates/network-security.yaml` | VPC, subnets, Internet Gateway, route tables, all security groups |
 | `templates/wordpress-server.yaml` | EC2 instance with automated LAMP stack and WordPress installation |
-| `templates/autoscaling-alb.yaml` | Application Load Balancer, Target Group, Listener and Launch Template|
+| `templates/autoscaling-alb.yaml` | ALB, Target Group, Listener, Launch Template, and Auto Scaling Group |
 
 Each template imports values exported by `network-security.yaml`, so the network stack must always be deployed first.
 
@@ -80,12 +81,7 @@ aws ec2 describe-instances \
   --output table
 ```
 
-To tear both stacks down (wordpress first, then network — order matters due to the dependency):
-
-```bash
-aws cloudformation delete-stack --stack-name wordpress-stack
-aws cloudformation delete-stack --stack-name network-stack
-```
+---
 
 ### 3. Connect to the Instance
 
@@ -155,13 +151,79 @@ http://<alb-dns-name>
 
 > **Note:** The ALB will return a `503 Service Temporarily Unavailable` until EC2 instances are registered into the Target Group. This happens automatically once the Auto Scaling Group is deployed in the next step.
 
+To check target health at any time:
+
+```bash
+aws elbv2 describe-target-health \
+  --target-group-arn <target-group-arn>
+```
+
+---
+
+### 8. Add the Launch Template
+
+The Launch Template defines the blueprint for every EC2 instance the Auto Scaling Group will launch — AMI, instance type, security group, and the full WordPress UserData bootstrap script. It lives inside `autoscaling-alb.yaml` alongside the ALB.
+
+Update the existing stack to add it:
+
+```bash
+aws cloudformation deploy \
+  --stack-name alb-stack \
+  --template-file templates/autoscaling-alb.yaml
+```
+
+To verify the Launch Template was created:
+
+```bash
+aws ec2 describe-launch-templates \
+  --filters "Name=launch-template-name,Values=WordPressLaunchTemplate"
+```
+
+---
+
+### 9. Add the Auto Scaling Group
+
+The ASG uses the Launch Template to automatically launch and register EC2 instances into the ALB Target Group. It is configured with:
+
+- **Min:** 2 instances
+- **Desired:** 2 instances
+- **Max:** 4 instances
+- **Subnets:** both public subnets across 2 availability zones
+- **Health checks:** EC2 + ELB (5-minute grace period for WordPress bootstrap)
+
+Update the stack again to add the ASG:
+
+```bash
+aws cloudformation deploy \
+  --stack-name alb-stack \
+  --template-file templates/autoscaling-alb.yaml
+```
+
+Once deployed, verify instances are launching:
+
+```bash
+aws autoscaling describe-auto-scaling-groups \
+  --auto-scaling-group-names WordPressASG \
+  --query 'AutoScalingGroups[0].Instances'
+```
+
+Check that the instances pass the ALB health check (wait ~5 minutes after deploy):
+
+```bash
+aws elbv2 describe-target-health \
+  --target-group-arn <target-group-arn>
+```
+
+Both instances should show `"State": "healthy"`. After that, the ALB DNS name will serve WordPress correctly.
+
+---
 
 ## Tearing Down the Stacks
 
 Delete stacks in reverse order — dependents before dependencies. CloudFormation won't let you delete a stack whose exports are still being referenced by another.
 
 ```bash
-# 1. Delete the ALB stack first
+# 1. Delete the ALB/ASG stack first
 aws cloudformation delete-stack --stack-name alb-stack
 
 # 2. Delete the WordPress web server stack
@@ -171,22 +233,17 @@ aws cloudformation delete-stack --stack-name wordpress-stack
 aws cloudformation delete-stack --stack-name network-stack
 ```
 
----
-
-### 8. Update the ALB Stack with the Launch Template
-
-The Launch Template defines the blueprint for every EC2 instance the Auto Scaling Group will launch — AMI, instance type, security group, and the full WordPress UserData bootstrap script.
-
-It lives inside `autoscaling-alb.yaml` alongside the ALB. Update the existing stack to add it:
+To monitor deletion progress:
 
 ```bash
-aws cloudformation deploy \
-  --stack-name alb-stack \
-  --template-file templates/autoscaling-alb.yaml \
+aws cloudformation describe-stacks \
+  --stack-name <stack-name> \
+  --query 'Stacks[0].StackStatus'
 ```
 
----
+The stack is fully deleted when the command returns an error saying the stack does not exist.
 
+---
 
 ## Project Structure
 
@@ -195,21 +252,11 @@ project/
 ├── templates/
 │   ├── network-security.yaml       # VPC, subnets, IGW, route tables, security groups
 │   ├── wordpress-server.yaml       # EC2 instance with automated WordPress install
-│   └── autoscaling-alb.yaml        # Application Load Balancer, Target Group, Listener
+│   └── autoscaling-alb.yaml        # ALB, Target Group, Listener, Launch Template, ASG
 ├── screenshots/
-│   ├── resource_map.png
-│   ├── resource_map_diagram.png
-│   ├── security_groups_diagram.png
-│   ├── stack_resources.png
-│   ├── instance_details.png
-│   ├── ssh_connection.png
-│   ├── browser_connection.png
-│   ├── wordpress_site.png
-│   └── wordpress_site_healthcheck.png
 ├── docs/
 │   └── deployment-guide.md         # Manual LAMP + WordPress installation guide
 └── README.md
 ```
 
 See `docs/deployment-guide.md` for the manual LAMP stack installation steps.
-

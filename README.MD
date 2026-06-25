@@ -11,17 +11,18 @@ A hands-on project that provisions a WordPress site on AWS using CloudFormation 
 - **EC2 instance** (t3.micro, Amazon Linux 2023) in the public subnet
 - **LAMP stack** (Apache, PHP, MariaDB, WordPress) auto-installed via UserData
 - **Security groups** for the web server, load balancer, ASG, and database
-- **Application Load Balancer** (internet-facing) across both public subnets
-- **Target Group** with health checks against `/health.html`
-- **HTTP Listener** on port 80 forwarding traffic to the Target Group
+- **Application Load Balancer** (internet-facing) across both public subnets, along with:
+  - *Target Group* with health checks against `/health.html`
+  - *HTTP Listener* on port 80
+  - *Launch Template* — reusable EC2 blueprint with full WordPress UserData bootstrap
 
 The infrastructure is split across three templates:
 
 | Template | Responsibility |
 |----------|---------------|
 | `templates/network-security.yaml` | VPC, subnets, Internet Gateway, route tables, all security groups |
-| `templates/wordpress-server.yaml` | EC2 instance with automated WordPress installation |
-| `templates/autoscaling-alb.yaml` | Application Load Balancer, Target Group, and Listener |
+| `templates/wordpress-server.yaml` | EC2 instance with automated LAMP stack and WordPress installation |
+| `templates/autoscaling-alb.yaml` | Application Load Balancer, Target Group, Listener and Launch Template|
 
 Each template imports values exported by `network-security.yaml`, so the network stack must always be deployed first.
 
@@ -161,7 +162,37 @@ aws elbv2 describe-target-health \
   --target-group-arn <target-group-arn>
 ```
 
+## Tearing Down the Stacks
+
+Delete stacks in reverse order — dependents before dependencies. CloudFormation won't let you delete a stack whose exports are still being referenced by another.
+
+```bash
+# 1. Delete the ALB stack first
+aws cloudformation delete-stack --stack-name alb-stack
+
+# 2. Delete the WordPress web server stack
+aws cloudformation delete-stack --stack-name wordpress-stack
+
+# 3. Delete the network stack last
+aws cloudformation delete-stack --stack-name network-stack
+```
+
 ---
+
+### 8. Update the ALB Stack with the Launch Template
+
+The Launch Template defines the blueprint for every EC2 instance the Auto Scaling Group will launch — AMI, instance type, security group, and the full WordPress UserData bootstrap script.
+
+It lives inside `autoscaling-alb.yaml` alongside the ALB. Update the existing stack to add it:
+
+```bash
+aws cloudformation deploy \
+  --stack-name alb-stack \
+  --template-file templates/autoscaling-alb.yaml \
+```
+
+---
+
 
 ## Project Structure
 

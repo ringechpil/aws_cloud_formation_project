@@ -1,141 +1,150 @@
-### PRELIMINARY README (work in progress...)
+# AWS CloudFormation — WordPress on EC2
 
-## Project Flow:
+A hands-on project that provisions a WordPress site on AWS using CloudFormation (Infrastructure as Code). Each step builds on the previous one, progressively automating more of the setup.
 
-We use CloudFormation to create and deploy an infrastructure in the cloud.
+---
 
+## What Gets Deployed
 
-1. We first deploy a VPC containing:
+- **VPC** with 2 public and 2 private subnets across 2 availability zones
+- **Internet Gateway** and route tables
+- **EC2 instance** (t3.micro, Amazon Linux 2023) in the public subnet
+- **LAMP stack** (Apache, PHP, MariaDB, WordPress) auto-installed via UserData
+- **Security groups** for the web server, load balancer, ASG, and database
 
- - 2 Public Subnets
- - 2 Private Subnets
- - Internet Gateway
- - Appropriate Route Tables
- - Route Table Associations 
+The infrastructure is split across two templates:
 
-To deploy this from the `.yaml` file, use:
+| Template | Responsibility |
+|----------|---------------|
+| `templates/network-security.yaml` | VPC, subnets, Internet Gateway, route tables, all security groups |
+| `templates/wordpress-server.yaml` | EC2 instance with automated WordPress installation |
 
-`aws cloudformation deploy --stack-name cloud-stack --template-file .\formation_template.yaml`
+`wordpress-server.yaml` imports values (subnet ID, security group ID) exported by `network-security.yaml`, so the network stack must be deployed first.
 
-We can always check the deployed resources with:
+---
 
+## Prerequisites
+
+- AWS CLI configured with appropriate credentials
+- A key pair named `vockey` (or update `KeyPairName` in the template)
+- A `.pem` file for SSH access (`labsuser.pem`)
+- Your local machine's public IP address
+
+---
+
+## Step-by-Step Guide
+
+### 1. Deploy the Network and Security Groups
+
+This creates the VPC, subnets, Internet Gateway, route tables, and all security groups. Pass your local IP so SSH access is locked to your machine.
+
+```bash
+aws cloudformation deploy \
+  --stack-name network-stack \
+  --template-file templates/network-security.yaml \
+  --parameter-overrides MyIpAddress=<your-ip>
+```
+
+To inspect deployed resources at any point:
+
+```bash
 aws cloudformation describe-stack-resources \
---stack-name myStack \
---query 'StackResources[*].[ResourceType,LogicalResourceID,ResourceStatus]' \
---output table
+  --stack-name network-stack \
+  --query 'StackResources[*].[ResourceType,LogicalResourceID,ResourceStatus]' \
+  --output table
+```
 
-We can always delete the deployed stack with:
+---
 
-`aws cloudformation delete-stack --stack-name cloud-stack`
+### 2. Deploy the Web Server
 
+Once the network stack is up, deploy the EC2 instance. It will automatically pull the subnet and security group IDs from the network stack's exports.
 
-2. We deploy and configure Security Groups with appropriate inbound/outbound rules.
+```bash
+aws cloudformation deploy \
+  --stack-name wordpress-stack \
+  --template-file templates/wordpress-server.yaml
+```
 
-3. We deploy a Web Server EC2 instance in the Public Subnet, with the appropriate Security Group that allows SSH connection only via personal local machine, but also can be accessed via HTTP.
+To tear both stacks down (wordpress first, then network — order matters due to the dependency):
 
-From now on, we deploy the stack from `.yaml` using:
+```bash
+aws cloudformation delete-stack --stack-name wordpress-stack
+aws cloudformation delete-stack --stack-name network-stack
+```
 
-`aws cloudformation deploy --stack-name cloud-stack --template-file .\formation_template.yaml --parameter-overrides MyIpAddress=<yourIP>`
+### 3. Connect to the Instance
 
-To get info on the Web Server EC2 instance, use
+Check instance details:
 
-`aws ec2 describe-instances --filters "Name=tag:aws:cloudformation:stack-name,Values=cloud-stack" --query "Reservations[*].Instances[*].{Name:Tags[?Key=='Name']|[0].Value,Status:State.Name,PublicIp:PublicIpAddress,PrivateIp:PrivateIpAddress,Subnet:SubnetId,SecurityGroup:SecurityGroups[0].GroupName,AMI:ImageId,InstanceType:InstanceType}" --output table`
+```bash
+aws ec2 describe-instances \
+  --filters "Name=tag:aws:cloudformation:stack-name,Values=wordpress-stack" \
+  --query "Reservations[*].Instances[*].{Name:Tags[?Key=='Name']|[0].Value,Status:State.Name,PublicIp:PublicIpAddress,PrivateIp:PrivateIpAddress,Subnet:SubnetId,SecurityGroup:SecurityGroups[0].GroupName,AMI:ImageId,InstanceType:InstanceType}" \
+  --output table
+```
 
+Connect via SSH:
 
-We then connect to this instace. We connect via terminal on the local machine by using
+```bash
+ssh -i labsuser.pem ec2-user@<instance-public-ip>
+```
 
-`ssh -i .\labsuser.pem ec2-user@<instanceIP>`
+---
 
-(where we need to get appropriate `.pem` file beforehand)
+### 4. Install WordPress Manually (Optional)
 
-4. We install and configure LAMP stack on the Web Server EC2 instance by running the following commands:
+If you want to understand what the `UserData` script does under the hood, or set things up manually, see the full step-by-step guide in `docs/deployment-guide.md`.
 
-- System update
+---
 
-sudo dnf upgrade -y
+### 5. Access WordPress
 
-- Install LAMP stack
+Open a browser and navigate to:
 
-sudo dnf install -y httpd wget php php-devel php-fpm php-mysqlnd php-mysqli php-json php-gd php-mbstring php-xml
+```
+http://<instance-public-ip>
+```
 
-sudo dnf install -y mariadb105-server
+Complete the WordPress setup wizard to create your site.
 
-- Start and enable services
+---
 
-sudo systemctl start httpd
+### 6. Automate the Installation (UserData)
 
-sudo systemctl enable httpd
+The manual steps above are already automated in the `UserData` section of `templates/wordpress-server.yaml`. When the stack is deployed, the EC2 instance bootstraps itself — no SSH required.
 
-sudo systemctl start mariadb
+To verify WordPress is running after deployment, visit:
 
-sudo systemctl enable mariadb
+```
+http://<instance-public-ip>/health.html
+```
 
-- Secure MariaDB (interactive)
+You should see: **WordPress Installation Completed Successfully**
 
-sudo mysql_secure_installation
+---
 
-- Create database and user
+## Project Structure
 
-sudo mysql -u root -p <<EOF
+```
+project/
+├── templates/
+│   ├── network-security.yaml       # VPC, subnets, IGW, route tables, security groups
+│   └── wordpress-server.yaml       # EC2 instance with automated WordPress install
+├── screenshots/
+│   ├── resource_map.png
+│   ├── resource_map_diagram.png
+│   ├── security_groups_diagram.png
+│   ├── stack_resources.png
+│   ├── instance_details.png
+│   ├── ssh_connection.png
+│   ├── browser_connection.png
+│   ├── wordpress_site.png
+│   └── wordpress_site_healthcheck.png
+├── docs/
+│   └── deployment-guide.md         # Manual LAMP + WordPress installation guide
+└── README.md
+```
 
-CREATE DATABASE \`wordpress_db\`;
+See `docs/deployment-guide.md` for the manual LAMP stack installation steps.
 
-CREATE USER 'wp_user'@'localhost' IDENTIFIED BY 'YourStrongPassword123!';
-
-GRANT ALL PRIVILEGES ON \`wordpress_db\`.* TO 'wp_user'@'localhost';
-
-FLUSH PRIVILEGES;
-
-EOF
-
-- Download and extract WordPress
-
-cd ~
-
-wget https://wordpress.org/latest.tar.gz
-
-tar -xzf latest.tar.gz
-
-- Configure WordPress
-
-cp wordpress/wp-config-sample.php wordpress/wp-config.php
-
-- Edit wp-config.php with your DB name, user, password, and salt keys
-
-nano wordpress/wp-config.php
-
-- Deploy to web root
-
-sudo cp -r wordpress/* /var/www/html/
-
-- Set permissions
-
-sudo chown -R apache:apache /var/www/html/
-
-sudo chmod 2775 /var/www
-
-find /var/www -type d -exec sudo chmod 2775 {} \;
-
-find /var/www -type f -exec sudo chmod 0644 {} \;
-
-- Enable .htaccess
-
-sudo sed -i '/<Directory "\/var\/www\/html">/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/httpd/conf/httpd.conf
-
-- Restart Apache
-
-sudo systemctl restart httpd
-
-- Cleanup
-
-rm -f ~/latest.tar.gz
-
-rm -rf ~/wordpress/
-
-5. After this is complete, we conncect to the Web Server instance via HTTP using our Web Browser (`http:\\<instanceIP>`).
-There we register to WordPress, and make a Webpage or small Website. 
-
-6. We automate this process further up by adding the `User Data` section in the EC2 Instance part of the template `.yaml` file,
-so that the LAMP stack is installed and configured automatically, upon the creation of the stack. 
-
-To check if the WordPress is running on the instance, we visit `http://<instanceIP>/health.html` via Web Browser. 

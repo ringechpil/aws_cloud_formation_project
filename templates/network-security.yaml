@@ -1,13 +1,12 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Infrastructure Template
+Description: Network and Security Infrastructure — VPC, Subnets, Internet Gateway, Route Tables, Security Groups
 
-# VPC with two public and two private subnets
 Parameters:
 
   VpcCidr:
     Type: String
     Default: 10.0.0.0/16
-  
+
   PublicSubnet1Cidr:
     Type: String
     Default: 10.0.1.0/24
@@ -19,21 +18,14 @@ Parameters:
   PrivateSubnet1Cidr:
     Type: String
     Default: 10.0.2.0/24
-  
+
   PrivateSubnet2Cidr:
     Type: String
     Default: 10.0.4.0/24
-  
+
   MyIpAddress:
     Type: String
-
-  AmazonLinuxAMIID:
-    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
-  
-  KeyPairName:
-    Type: AWS::EC2::KeyPair::KeyName
-    Default: vockey
+    Description: Your local machine's public IP address (used to restrict SSH access)
 
 
 Resources:
@@ -85,42 +77,6 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
 
 ###########
-# Public Subnet 1
-###########
-
-  PublicSubnet1:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      MapPublicIpOnLaunch: true
-      CidrBlock: !Ref PublicSubnet1Cidr
-      AvailabilityZone: !Select 
-        - 0
-        - !GetAZs ''
-      Tags:
-        - Key: Name
-          Value: Public Subnet 1
-
-
-###########
-# Public Subnet 2
-###########
-
-  PublicSubnet2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      MapPublicIpOnLaunch: true
-      CidrBlock: !Ref PublicSubnet2Cidr
-      AvailabilityZone: !Select 
-        - 1
-        - !GetAZs ''
-      Tags:
-        - Key: Name
-          Value: Public Subnet 2
-
-
-###########
 # Private Route Table
 ###########
 
@@ -132,6 +88,39 @@ Resources:
         - Key: Name
           Value: Private Route Table
 
+###########
+# Public Subnet 1
+###########
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+      CidrBlock: !Ref PublicSubnet1Cidr
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Public Subnet 1
+
+###########
+# Public Subnet 2
+###########
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      MapPublicIpOnLaunch: true
+      CidrBlock: !Ref PublicSubnet2Cidr
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Public Subnet 2
 
 ###########
 # Private Subnet 1
@@ -143,13 +132,13 @@ Resources:
       VpcId: !Ref VPC
       MapPublicIpOnLaunch: false
       CidrBlock: !Ref PrivateSubnet1Cidr
-      AvailabilityZone: !Select 
+      AvailabilityZone: !Select
         - 0
         - !GetAZs ''
       Tags:
         - Key: Name
           Value: Private Subnet 1
-  
+
 ###########
 # Private Subnet 2
 ###########
@@ -160,7 +149,7 @@ Resources:
       VpcId: !Ref VPC
       MapPublicIpOnLaunch: false
       CidrBlock: !Ref PrivateSubnet2Cidr
-      AvailabilityZone: !Select 
+      AvailabilityZone: !Select
         - 1
         - !GetAZs ''
       Tags:
@@ -168,7 +157,7 @@ Resources:
           Value: Private Subnet 2
 
 ###########
-# Public Route Tables Associations
+# Route Table Associations
 ###########
 
   PublicRouteTableAssociation1:
@@ -177,17 +166,11 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnet1
 
-
   PublicRouteTableAssociation2:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnet2
-
-
-###########
-# Private Route Table Associations
-###########
 
   PrivateRouteTableAssociation1:
     Type: AWS::EC2::SubnetRouteTableAssociation
@@ -201,92 +184,9 @@ Resources:
       RouteTableId: !Ref PrivateRouteTable
       SubnetId: !Ref PrivateSubnet2
 
-
-##########
-# EC2 Instance
-##########
-
-  WebServerInstance:
-    Type: AWS::EC2::Instance
-    Properties:
-      ImageId: !Ref AmazonLinuxAMIID
-      InstanceType: t3.micro
-      KeyName: !Ref KeyPairName
-      SecurityGroupIds: 
-        - !Ref WebServerSecurityGroup
-      SubnetId: !Ref PublicSubnet1
-      Tags:
-        - Key: Name
-          Value: Web Server
-      UserData:
-         Fn::Base64: |
-          #!/bin/bash
-          # Update OS
-          dnf update -y
-
-          # Install Packages
-          dnf install -y \
-          httpd \
-          php \
-          php-mysqlnd \
-          php-fpm \
-          mariadb105-server \
-          wget \
-          tar
-
-          # Enable Services
-          systemctl enable httpd
-          systemctl start httpd
-
-          systemctl enable mariadb
-          systemctl start mariadb
-
-          # Create Database and User
-          mysql -u root <<EOF
-          CREATE DATABASE wordpress;
-          CREATE USER 'wpuser'@'localhost' IDENTIFIED BY 'Password123!';
-          GRANT ALL PRIVILEGES ON wordpress.* TO 'wpuser'@'localhost';
-          FLUSH PRIVILEGES;
-          EOF
-
-          # Download WordPress
-          cd /tmp
-
-          wget https://wordpress.org/latest.tar.gz
-
-          tar -xzf latest.tar.gz
-
-          # Remove Apache Default Page
-          rm -rf /var/www/html/*
-
-          # Copy WordPress Files
-          cp -r wordpress/* /var/www/html/
-
-          # Configure WordPress
-          cd /var/www/html
-
-          cp wp-config-sample.php wp-config.php
-
-          sed -i "s/database_name_here/wordpress/" wp-config.php
-          sed -i "s/username_here/wpuser/" wp-config.php
-          sed -i "s/password_here/Password123!/" wp-config.php
-          sed -i "s/localhost/localhost/" wp-config.php
-
-          # Permissions
-          chown -R apache:apache /var/www/html
-
-          find /var/www/html -type d -exec chmod 755 {} \;
-          find /var/www/html -type f -exec chmod 644 {} \;
-
-          # Restart Apache
-          systemctl restart httpd
-
-          # Create Validation Page
-          echo "<h1>WordPress Installation Completed Successfully</h1>" > /var/www/html/health.html
-
-##########
-#Security Groups
-##########
+###########
+# Security Groups
+###########
 
   WebServerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -311,7 +211,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupName: LoadBalancerSG
-      GroupDescription: Allow HTTP/HTTPS from the internet, allow traffic out to ASG
+      GroupDescription: Allow HTTP from the internet, allow traffic out to ASG
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -335,7 +235,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupName: AsgSG
-      GroupDescription: Allow SSH from Web Server, and app traffic
+      GroupDescription: Allow SSH from Web Server, and app traffic from Load Balancer
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -354,7 +254,6 @@ Resources:
       FromPort: 80
       ToPort: 80
       SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
-
 
   DatabaseSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -376,7 +275,7 @@ Resources:
           Value: DbSG
 
 ###########
-# Outputs
+# Outputs (exported for use by other stacks)
 ###########
 
 Outputs:
@@ -452,9 +351,3 @@ Outputs:
     Value: !Ref LoadBalancerSecurityGroup
     Export:
       Name: !Sub '${AWS::StackName}-LoadBalancerSecurityGroupId'
-
-  WebServerInstanceId:
-    Description: The Instance ID of the Web Server
-    Value: !Ref WebServerInstance
-    Export:
-      Name: !Sub '${AWS::StackName}-WebServerInstanceId'

@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Network and Security Infrastructure — VPC, Subnets, Internet Gateway, Route Tables, Security Groups
+Description: Network and Security Infrastructure - VPC, Subnets, Internet Gateway, Route Tables, Security Groups
 
 Parameters:
 

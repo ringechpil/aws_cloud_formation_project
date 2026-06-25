@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Application Load Balancer and Auto Scaling Group
+
+Parameters:
+
+  NetworkStackName:
+    Type: String
+    Default: network-stack
+    Description: Name of the network-security stack to import values from
+
+
+Resources:
+
+###########
+# Application Load Balancer
+###########
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: WebAppALB
+      Type: application
+      Scheme: internet-facing
+      IpAddressType: ipv4
+      Subnets:
+        - Fn::ImportValue: !Sub '${NetworkStackName}-PublicSubnet1Id'
+        - Fn::ImportValue: !Sub '${NetworkStackName}-PublicSubnet2Id'
+      SecurityGroups:
+        - Fn::ImportValue: !Sub '${NetworkStackName}-LoadBalancerSecurityGroupId'
+      Tags:
+        - Key: Name
+          Value: WebAppALB
+
+###########
+# Target Group
+###########
+
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: WebAppTargetGroup
+      VpcId:
+        Fn::ImportValue: !Sub '${NetworkStackName}-VpcId'
+      Protocol: HTTP
+      Port: 80
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /health.html
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      TargetType: instance
+      Tags:
+        - Key: Name
+          Value: WebAppTargetGroup
+
+###########
+# Listener
+###########
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+
+
+###########
+# Outputs
+###########
+
+Outputs:
+
+  LoadBalancerDNS:
+    Description: DNS name of the Application Load Balancer
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub '${AWS::StackName}-LoadBalancerDNS'
+
+  LoadBalancerArn:
+    Description: ARN of the Application Load Balancer
+    Value: !Ref ApplicationLoadBalancer
+    Export:
+      Name: !Sub '${AWS::StackName}-LoadBalancerArn'
+
+  TargetGroupArn:
+    Description: ARN of the Target Group
+    Value: !Ref ALBTargetGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-TargetGroupArn'
+
+  ALBListenerArn:
+    Description: ARN of the ALB Listener
+    Value: !Ref ALBListener
+    Export:
+      Name: !Sub '${AWS::StackName}-ALBListenerArn'

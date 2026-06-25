@@ -11,15 +11,19 @@ A hands-on project that provisions a WordPress site on AWS using CloudFormation 
 - **EC2 instance** (t3.micro, Amazon Linux 2023) in the public subnet
 - **LAMP stack** (Apache, PHP, MariaDB, WordPress) auto-installed via UserData
 - **Security groups** for the web server, load balancer, ASG, and database
+- **Application Load Balancer** (internet-facing) across both public subnets
+- **Target Group** with health checks against `/health.html`
+- **HTTP Listener** on port 80 forwarding traffic to the Target Group
 
-The infrastructure is split across two templates:
+The infrastructure is split across three templates:
 
 | Template | Responsibility |
 |----------|---------------|
 | `templates/network-security.yaml` | VPC, subnets, Internet Gateway, route tables, all security groups |
 | `templates/wordpress-server.yaml` | EC2 instance with automated WordPress installation |
+| `templates/autoscaling-alb.yaml` | Application Load Balancer, Target Group, and Listener |
 
-`wordpress-server.yaml` imports values (subnet ID, security group ID) exported by `network-security.yaml`, so the network stack must be deployed first.
+Each template imports values exported by `network-security.yaml`, so the network stack must always be deployed first.
 
 ---
 
@@ -49,8 +53,8 @@ To inspect deployed resources at any point:
 
 ```bash
 aws cloudformation describe-stack-resources \
-  --stack-name network-stack \
-  --query 'StackResources[*].[ResourceType,LogicalResourceID,ResourceStatus]' \
+  --stack-name <stack-name> \
+  --query 'StackResources[*].[ResourceType,LogicalResourceId,ResourceStatus]' \
   --output table
 ```
 
@@ -66,15 +70,6 @@ aws cloudformation deploy \
   --template-file templates/wordpress-server.yaml
 ```
 
-To tear both stacks down (wordpress first, then network — order matters due to the dependency):
-
-```bash
-aws cloudformation delete-stack --stack-name wordpress-stack
-aws cloudformation delete-stack --stack-name network-stack
-```
-
-### 3. Connect to the Instance
-
 Check instance details:
 
 ```bash
@@ -84,6 +79,15 @@ aws ec2 describe-instances \
   --output table
 ```
 
+To tear both stacks down (wordpress first, then network — order matters due to the dependency):
+
+```bash
+aws cloudformation delete-stack --stack-name wordpress-stack
+aws cloudformation delete-stack --stack-name network-stack
+```
+
+### 3. Connect to the Instance
+
 Connect via SSH:
 
 ```bash
@@ -92,9 +96,9 @@ ssh -i labsuser.pem ec2-user@<instance-public-ip>
 
 ---
 
-### 4. Install WordPress Manually (Optional)
+### 4. Install WordPress Manually
 
-If you want to understand what the `UserData` script does under the hood, or set things up manually, see the full step-by-step guide in `docs/deployment-guide.md`.
+See the full step-by-step guide in `docs/deployment-guide.md`.
 
 ---
 
@@ -124,13 +128,49 @@ You should see: **WordPress Installation Completed Successfully**
 
 ---
 
+### 7. Deploy the Application Load Balancer
+
+With the network stack in place, deploy the ALB stack. It creates an internet-facing Application Load Balancer across both public subnets, a Target Group, and an HTTP Listener.
+
+```bash
+aws cloudformation deploy \
+  --stack-name alb-stack \
+  --template-file templates/autoscaling-alb.yaml
+```
+
+Once deployed, get the ALB DNS name from the stack outputs:
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name alb-stack \
+  --query 'Stacks[0].Outputs'
+```
+
+You can then access the site via:
+
+```
+http://<alb-dns-name>
+```
+
+> **Note:** The ALB will return a `503 Service Temporarily Unavailable` until EC2 instances are registered into the Target Group. This happens automatically once the Auto Scaling Group is deployed in the next step.
+
+To check target health at any time:
+
+```bash
+aws elbv2 describe-target-health \
+  --target-group-arn <target-group-arn>
+```
+
+---
+
 ## Project Structure
 
 ```
 project/
 ├── templates/
 │   ├── network-security.yaml       # VPC, subnets, IGW, route tables, security groups
-│   └── wordpress-server.yaml       # EC2 instance with automated WordPress install
+│   ├── wordpress-server.yaml       # EC2 instance with automated WordPress install
+│   └── autoscaling-alb.yaml        # Application Load Balancer, Target Group, Listener
 ├── screenshots/
 │   ├── resource_map.png
 │   ├── resource_map_diagram.png

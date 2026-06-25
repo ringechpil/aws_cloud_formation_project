@@ -155,12 +155,6 @@ http://<alb-dns-name>
 
 > **Note:** The ALB will return a `503 Service Temporarily Unavailable` until EC2 instances are registered into the Target Group. This happens automatically once the Auto Scaling Group is deployed in the next step.
 
-To check target health at any time:
-
-```bash
-aws elbv2 describe-target-health \
-  --target-group-arn <target-group-arn>
-```
 
 ## Tearing Down the Stacks
 

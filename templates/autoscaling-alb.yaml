@@ -91,7 +91,7 @@ Resources:
         InstanceType: t3.micro
         KeyName: !Ref KeyPairName
         SecurityGroupIds:
-          - Fn::ImportValue: !Sub '${NetworkStackName}-WebServerSecurityGroupId'
+          - Fn::ImportValue: !Sub '${NetworkStackName}-ASGSecurityGroupId'
         UserData:
           Fn::Base64: |
             #!/bin/bash

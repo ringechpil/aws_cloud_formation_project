@@ -191,7 +191,7 @@ The ASG uses the Launch Template to automatically launch and register EC2 instan
 - **Subnets:** both public subnets across 2 availability zones
 - **Health checks:** EC2 + ELB (5-minute grace period for WordPress bootstrap)
 
-Update the stack again to add the ASG:
+Update the stack to add the ASG:
 
 ```bash
 aws cloudformation deploy \
@@ -199,22 +199,39 @@ aws cloudformation deploy \
   --template-file templates/autoscaling-alb.yaml
 ```
 
-Once deployed, verify instances are launching:
+---
+
+### 10. Verify Instances and Health Checks
+
+Once the stack is deployed, confirm the ASG has launched its instances:
 
 ```bash
 aws autoscaling describe-auto-scaling-groups \
   --auto-scaling-group-names WordPressASG \
-  --query 'AutoScalingGroups[0].Instances'
+  --query 'AutoScalingGroups[0].Instances[*].[InstanceId,HealthStatus,LifecycleState,AvailabilityZone]' \
+  --output table
 ```
 
-Check that the instances pass the ALB health check (wait ~5 minutes after deploy):
+Check that the instances pass the ALB health check. The UserData script takes ~5 minutes to complete, so wait before checking:
 
 ```bash
 aws elbv2 describe-target-health \
   --target-group-arn <target-group-arn>
 ```
 
-Both instances should show `"State": "healthy"`. After that, the ALB DNS name will serve WordPress correctly.
+Both instances should show `"State": "healthy"`. You can get the Target Group ARN from the stack outputs:
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name alb-stack \
+  --query 'Stacks[0].Outputs'
+```
+
+Once both targets are healthy, the ALB DNS name will serve WordPress:
+
+```
+http://<alb-dns-name>
+```
 
 ---
 
@@ -232,16 +249,6 @@ aws cloudformation delete-stack --stack-name wordpress-stack
 # 3. Delete the network stack last
 aws cloudformation delete-stack --stack-name network-stack
 ```
-
-To monitor deletion progress:
-
-```bash
-aws cloudformation describe-stacks \
-  --stack-name <stack-name> \
-  --query 'Stacks[0].StackStatus'
-```
-
-The stack is fully deleted when the command returns an error saying the stack does not exist.
 
 ---
 

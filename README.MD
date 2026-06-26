@@ -15,7 +15,9 @@ A hands-on project that provisions a WordPress site on AWS using CloudFormation 
   - *Target Group* with health checks against `/health.html`
   - *HTTP Listener* on port 80
 - **Launch Template** — reusable EC2 blueprint with full WordPress UserData bootstrap
-- **Auto Scaling Group** — min 2, desired 2, max 4 instances across both public subnets
+- **Auto Scaling Group** — min 2, desired 2, max 4 instances across both public subnets, with:
+  - *Scaling Policies* — scale-out (+1 instance) at CPU > 70%, scale-in (-1 instance) at CPU < 30%
+  - *CloudWatch Alarms* — monitor ASG average CPU and trigger the scaling policies
 
 The infrastructure is split across three templates:
 
@@ -23,7 +25,7 @@ The infrastructure is split across three templates:
 |----------|---------------|
 | `templates/network-security.yaml` | VPC, subnets, Internet Gateway, route tables, all security groups |
 | `templates/wordpress-server.yaml` | EC2 instance with automated LAMP stack and WordPress installation |
-| `templates/autoscaling-alb.yaml` | ALB, Target Group, Listener, Launch Template, and Auto Scaling Group |
+| `templates/autoscaling-alb.yaml` | ALB, Target Group, Listener, Launch Template, ASG, Scaling Policies, CloudWatch Alarms |
 
 Each template imports values exported by `network-security.yaml`, so the network stack must always be deployed first.
 
@@ -164,20 +166,7 @@ aws elbv2 describe-target-health \
 
 The Launch Template defines the blueprint for every EC2 instance the Auto Scaling Group will launch — AMI, instance type, security group, and the full WordPress UserData bootstrap script. It lives inside `autoscaling-alb.yaml` alongside the ALB.
 
-Update the existing stack to add it:
-
-```bash
-aws cloudformation deploy \
-  --stack-name alb-stack \
-  --template-file templates/autoscaling-alb.yaml
-```
-
-To verify the Launch Template was created:
-
-```bash
-aws ec2 describe-launch-templates \
-  --filters "Name=launch-template-name,Values=WordPressLaunchTemplate"
-```
+Update the existing stack to add it.
 
 ---
 
@@ -191,13 +180,7 @@ The ASG uses the Launch Template to automatically launch and register EC2 instan
 - **Subnets:** both public subnets across 2 availability zones
 - **Health checks:** EC2 + ELB (5-minute grace period for WordPress bootstrap)
 
-Update the stack to add the ASG:
-
-```bash
-aws cloudformation deploy \
-  --stack-name alb-stack \
-  --template-file templates/autoscaling-alb.yaml
-```
+Update the stack to add the ASG. 
 
 ---
 
@@ -232,6 +215,24 @@ Once both targets are healthy, the ALB DNS name will serve WordPress:
 ```
 http://<alb-dns-name>
 ```
+
+---
+
+### 11. Configure Scaling Policies
+
+Dynamic scaling policies are added to `autoscaling-alb.yaml` alongside two CloudWatch alarms that monitor average CPU utilization across the ASG.
+
+| Policy | Trigger | Action |
+|--------|---------|--------|
+| Scale-Out | CPU > 70% for 2 consecutive 2-minute periods | Add 1 instance |
+| Scale-In | CPU < 30% for 2 consecutive 2-minute periods | Remove 1 instance |
+
+Both policies have a 5-minute cooldown to prevent rapid back-to-back scaling actions.
+
+Update the stack to apply the policies.
+
+
+> **Note:** `WordPress-LowCPU` will show `ALARM` state on idle instances since CPU is well below 30%. This is expected — the ASG minimum of 2 instances prevents any scale-in from actually occurring.
 
 ---
 

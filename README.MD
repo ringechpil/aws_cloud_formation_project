@@ -210,12 +210,6 @@ aws cloudformation describe-stacks \
   --query 'Stacks[0].Outputs'
 ```
 
-Once both targets are healthy, the ALB DNS name will serve WordPress:
-
-```
-http://<alb-dns-name>
-```
-
 ---
 
 ### 11. Configure Scaling Policies
@@ -233,6 +227,108 @@ Update the stack to apply the policies.
 
 
 > **Note:** `WordPress-LowCPU` will show `ALARM` state on idle instances since CPU is well below 30%. This is expected — the ASG minimum of 2 instances prevents any scale-in from actually occurring.
+
+---
+
+### 12. Validate the Application Load Balancer
+
+Once the ASG instances are healthy, the ALB is ready to serve traffic. Get the ALB DNS name from the stack outputs:
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name alb-stack \
+  --query "Stacks[0].Outputs[?OutputKey=='LoadBalancerDNS'].OutputValue" \
+  --output text
+```
+
+Then open the following in your browser:
+
+```
+http://<alb-dns-name>
+```
+
+You should see the WordPress site. To verify traffic is being distributed across both instances, visit:
+
+```
+http://<alb-dns-name>/instance.html
+```
+
+Refresh a few times — the instance ID and IP address should alternate between the two ASG instances, confirming the ALB is load balancing correctly.
+
+---
+
+### 13. Generate CPU Load and Test Auto Scaling
+
+This step verifies that the scaling policies work by artificially spiking CPU on one of the ASG instances and observing the scale-out trigger.
+
+**1. Copy the `.pem` key from your local machine to the Web Server (run this from your local terminal):**
+
+```bash
+scp -i labsuser.pem labsuser.pem ec2-user@<webserver-public-ip>:~/.ssh/
+```
+
+**2. SSH into the Web Server instance:**
+
+```bash
+ssh -i labsuser.pem ec2-user@<webserver-public-ip>
+```
+
+**3. Set correct permissions on the copied key (run this on the Web Server):**
+
+```bash
+chmod 400 ~/.ssh/labsuser.pem
+```
+
+**4. Get the private IP of an ASG instance:**
+
+```bash
+aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=WordPress-ASG-Instance" "Name=instance-state-name,Values=running" \
+  --query "Reservations[*].Instances[*].[InstanceId,PrivateIpAddress]" \
+  --output table
+```
+
+**2. SSH into the Web Server instance:**
+
+```bash
+ssh -i labsuser.pem ec2-user@<webserver-public-ip>
+```
+
+**5. From the Web Server, hop into the ASG instance using its private IP:**
+
+```bash
+ssh -i ~/.ssh/labsuser.pem ec2-user@<asg-instance-private-ip>
+```
+
+**6. Install the stress tool:**
+
+```bash
+sudo dnf install -y stress
+```
+
+**7. Run the stress test (4 CPU workers for 15 minutes):**
+
+```bash
+stress --cpu 4 --timeout 900
+```
+
+**8. While the test runs, monitor the ASG in a separate terminal:**
+
+```bash
+# Watch CloudWatch alarm state
+aws cloudwatch describe-alarms \
+  --alarm-names WordPress-HighCPU \
+  --query "MetricAlarms[0].[AlarmName,StateValue]" \
+  --output table
+
+# Watch ASG instance count
+aws autoscaling describe-auto-scaling-groups \
+  --auto-scaling-group-names WordPressASG \
+  --query "AutoScalingGroups[0].Instances[*].[InstanceId,HealthStatus,LifecycleState]" \
+  --output table
+```
+
+After ~4 minutes (2 evaluation periods of 2 minutes each), the `WordPress-HighCPU` alarm will enter `ALARM` state and the ASG will add a third instance. Once the stress test ends and CPU drops below 30%, the `WordPress-LowCPU` alarm will eventually trigger a scale-in back to 2 instances (subject to the 5-minute cooldown).
 
 ---
 

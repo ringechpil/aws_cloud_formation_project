@@ -166,8 +166,6 @@ aws elbv2 describe-target-health \
 
 The Launch Template defines the blueprint for every EC2 instance the Auto Scaling Group will launch — AMI, instance type, security group, and the full WordPress UserData bootstrap script. It lives inside `autoscaling-alb.yaml` alongside the ALB.
 
-Update the existing stack to add it.
-
 ---
 
 ### 9. Add the Auto Scaling Group
@@ -179,8 +177,6 @@ The ASG uses the Launch Template to automatically launch and register EC2 instan
 - **Max:** 4 instances
 - **Subnets:** both public subnets across 2 availability zones
 - **Health checks:** EC2 + ELB (5-minute grace period for WordPress bootstrap)
-
-Update the stack to add the ASG. 
 
 ---
 
@@ -223,9 +219,6 @@ Dynamic scaling policies are added to `autoscaling-alb.yaml` alongside two Cloud
 
 Both policies have a 5-minute cooldown to prevent rapid back-to-back scaling actions.
 
-Update the stack to apply the policies.
-
-
 > **Note:** `WordPress-LowCPU` will show `ALARM` state on idle instances since CPU is well below 30%. This is expected — the ASG minimum of 2 instances prevents any scale-in from actually occurring.
 
 ---
@@ -259,7 +252,7 @@ Refresh a few times — the instance ID and IP address should alternate between 
 
 ### 13. Generate CPU Load and Test Auto Scaling
 
-This step verifies that the scaling policies work by artificially spiking CPU on one of the ASG instances and observing the scale-out trigger.
+This step verifies that the scaling policies work by artificially spiking CPU on one of the ASG instances and observing the scale-out trigger. Run the stress test on BOTH instances.
 
 **1. Copy the `.pem` key from your local machine to the Web Server (run this from your local terminal):**
 
@@ -288,12 +281,6 @@ aws ec2 describe-instances \
   --output table
 ```
 
-**2. SSH into the Web Server instance:**
-
-```bash
-ssh -i labsuser.pem ec2-user@<webserver-public-ip>
-```
-
 **5. From the Web Server, hop into the ASG instance using its private IP:**
 
 ```bash
@@ -312,7 +299,11 @@ sudo dnf install -y stress
 stress --cpu 4 --timeout 900
 ```
 
-**8. While the test runs, monitor the ASG in a separate terminal:**
+--- 
+
+### 14. Motinor CloudWatch Metrics
+
+While the test runs, monitor the ASG in a separate terminal:
 
 ```bash
 # Watch CloudWatch alarm state
@@ -320,15 +311,55 @@ aws cloudwatch describe-alarms \
   --alarm-names WordPress-HighCPU \
   --query "MetricAlarms[0].[AlarmName,StateValue]" \
   --output table
+```
+After ~4 minutes (2 evaluation periods of 2 minutes each), the `WordPress-HighCPU` alarm will enter `ALARM` state and the ASG will add a third instance.
 
+---
+
+### 15. Verifying Scale-Out
+
+To check if the third instance is up:
+
+```
 # Watch ASG instance count
 aws autoscaling describe-auto-scaling-groups \
   --auto-scaling-group-names WordPressASG \
   --query "AutoScalingGroups[0].Instances[*].[InstanceId,HealthStatus,LifecycleState]" \
   --output table
 ```
+---
 
-After ~4 minutes (2 evaluation periods of 2 minutes each), the `WordPress-HighCPU` alarm will enter `ALARM` state and the ASG will add a third instance. Once the stress test ends and CPU drops below 30%, the `WordPress-LowCPU` alarm will eventually trigger a scale-in back to 2 instances (subject to the 5-minute cooldown).
+### 16. Verifying Load Balancer
+
+All three instances should be healthy. 
+
+Visit 
+
+`http://<alb-dns>/instance.html`
+
+in your web browser, and keep refreshing. The Load Balancer should round-robin between the 3 healthy instances. The stress test might also produce the fourth instance via scale-out.
+
+---
+
+### 17. Verifying Scale-In
+
+Wait for the stress test to finish, or terminate it with
+
+`pkill stress`
+
+(on both instances). After some time, the number of running instances should drop from 3-4 to two. 
+
+---
+
+### 18. Failure Recovery Test
+
+Terminate one of the ASG running instances 
+
+`aws ec2 terminate-instances --instance-ids <instance-id>`
+
+Visiting `http://<alb-dns>/instance.html` should now direct you to only one remaining healthy instance in the ASG.
+
+Shortly, a new instance in the ASG should spawn, replacing the terminated one. `http://<alb-dns>/instance.html` should now round-robin between the old and the new instance. 
 
 ---
 

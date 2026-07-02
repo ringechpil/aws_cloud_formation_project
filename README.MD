@@ -395,3 +395,20 @@ project/
 ```
 
 See `docs/deployment-guide.md` for the manual LAMP stack installation steps.
+
+---
+
+## Next Steps
+
+The current setup runs WordPress with a local MariaDB database on each ASG instance. This means each instance has its own isolated database — content created on one instance won't be visible on others, and data is lost when an instance is terminated.
+
+The natural next evolution is to decouple the database from the web tier:
+
+**Deploy a managed database in the Private Subnets**
+
+- Provision an **Amazon RDS instance** (MySQL or MariaDB) in the two private subnets using a new `database.yaml` template
+- The private subnets have no internet access, keeping the database isolated from the public internet
+- Use the existing `DbSG` security group (already defined in `network-security.yaml`), which allows port 3306 only from `AsgSG`
+- Update the WordPress `wp-config.php` configuration in the UserData script to point to the RDS endpoint instead of `localhost`
+
+This means all ASG instances share a single database, so content is consistent regardless of which instance the ALB routes a request to — and data survives instance terminations and replacements.
